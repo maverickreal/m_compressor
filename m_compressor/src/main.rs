@@ -7,13 +7,15 @@ fn main() {
 
     match std::io::stdin().read_to_string(&mut file_path) {
         Ok(_) => {
-            if let Ok(m_comp) = m_compressor::MCompressor::new(file_path) {
+            let trimmed_path = String::from(file_path.trim());
+
+            if let Ok(m_comp) = m_compressor::MCompressor::new(&trimmed_path) {
                 println!(
-                    "The compressed file is at: {}.",
-                    m_comp.get_compressed_file_path()
+                    "The compressed file will be at: {:?}.",
+                    m_comp.get_out_file_path()
                 );
             } else {
-                print!("There was an error compressing the file!");
+                println!("Error: Could not open or process the file path!");
             }
         }
         Err(err) => {

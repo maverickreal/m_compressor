@@ -1,46 +1,47 @@
-use std::{fs::File, path::Path};
+use std::{
+    fs::File,
+    io::BufReader,
+    path::{Path, PathBuf},
+};
+
+mod lz77;
 
 pub struct MCompressor {
-    file_path: String,
-    compressed_file_path: String,
+    in_file_path: PathBuf,
+    out_file_path: PathBuf,
+    reader: BufReader<std::fs::File>,
 }
 
-pub enum MCompressError {
-    InvalidPath,
-    FileNotFound,
+pub enum CompressError {
+    FileOpenError,
 }
 
 impl MCompressor {
-    fn is_input_file_path_ok(file_path: &String) -> Option<MCompressError> {
-        let path: &Path = Path::new(file_path);
+    pub fn get_out_file_path(&self) -> &Path {
+        return &self.out_file_path;
+    }
 
-        if !path.exists() {
-            return Some(MCompressError::InvalidPath);
-        }
+    pub fn get_in_file_path(&self) -> &Path {
+        return &self.in_file_path;
+    }
 
-        if !path.is_file() {
-            return Some(MCompressError::FileNotFound);
-        }
+    pub fn new(in_file_path_str: &str) -> Result<MCompressor, CompressError> {
+        let in_path: PathBuf = PathBuf::from(in_file_path_str);
+        let file: File = File::open(&in_path).map_err(|_| CompressError::FileOpenError)?;
+        let mut out_path_os_string = in_path.as_os_str().to_owned();
+
+        out_path_os_string.push(".mc");
+
+        Ok(Self {
+            in_file_path: in_path,
+            out_file_path: PathBuf::from(out_path_os_string),
+            reader: BufReader::with_capacity(lz77::WINDOW_SIZE, file),
+        })
+    }
+
+    pub fn compress(&self) -> Option<CompressError> {
+        let symbols: Vec<u8> = lz77::process_lz77(&self.reader)?;
 
         return None;
-    }
-
-    pub fn get_compressed_file_path(&self) -> &String {
-        return &self.compressed_file_path;
-    }
-
-    pub fn new(_file_path: String) -> Result<MCompressor, MCompressError> {
-        if let Some(err) = Self::is_input_file_path_ok(&_file_path) {
-            return Err(err);
-        }
-
-        let _compressed_file_path = _file_path.clone() + ".mc";
-
-        let self_obj: MCompressor = MCompressor {
-            file_path: _file_path,
-            compressed_file_path: _compressed_file_path,
-        };
-
-        return Ok(self_obj);
     }
 }
