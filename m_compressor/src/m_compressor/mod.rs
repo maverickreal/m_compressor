@@ -4,6 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::m_compressor::lz77::LzSymbol;
+
 mod lz77;
 
 pub struct MCompressor {
@@ -39,9 +41,8 @@ impl MCompressor {
         })
     }
 
-    pub fn compress(&self) -> Option<CompressError> {
-        let symbols: Vec<u8> = lz77::process_lz77(&self.reader)?;
-
-        return None;
+    pub fn compress(&self) -> Result<(), CompressError> {
+        let symbols: Vec<LzSymbol> = lz77::process_lz77(&mut self.reader)?;
+        return Ok(());
     }
 }
