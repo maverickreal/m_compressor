@@ -49,40 +49,23 @@ fn get_token(window: &VecDeque<u8>, buffer: &Vec<u8>) -> LzSymbol {
     };
 }
 
-fn replenish_containers(
+fn refill_buffer(
     input_stream: &mut BufReader<File>,
     buffer: &mut Vec<u8>,
-    window: &mut VecDeque<u8>,
 ) -> Result<(), CompressError> {
-    let strm_to_que_transfer = |stream_: &mut BufReader<File>,
-                                buf_: &mut VecDeque<u8>,
-                                exp_sz: usize|
-     -> Result<(), CompressError> {
-        let int_buf = stream_.fill_buf().map_err(|err| {
-            println!("Error: {}", err); // e
+    let int_buf = input_stream.fill_buf().map_err(|err| {
+        eprintln!("Error: {}", err); // e
 
-            return CompressError::StreamReadError(String::from(
-                "An error occurred while reading from the input.",
-            ));
-        })?;
+        return CompressError::StreamReadError(String::from(
+            "An error occurred while reading from the input.",
+        ));
+    })?;
 
-        let req_sz = int_buf.len().min(exp_sz - buf_.len());
+    let req_sz = int_buf.len().min(MAX_MATCH_SEARCH_SIZE - buffer.len());
 
-        buf_.reserve(req_sz);
-        buf_.extend(&int_buf[0..req_sz]);
-        stream_.consume(req_sz);
-
-        return Ok(());
-    };
-
-    let mut buf_cpy = VecDeque::from_iter(buffer.drain(..));
-    let req_sz = buf_cpy.len().min(WINDOW_SIZE - window.len());
-    window.extend(buf_cpy.drain(0..req_sz));
-
-    strm_to_que_transfer(input_stream, window, WINDOW_SIZE)?;
-    strm_to_que_transfer(input_stream, &mut buf_cpy, MAX_MATCH_SEARCH_SIZE)?;
-
-    *buffer = Vec::from_iter(buf_cpy);
+    buffer.reserve(req_sz);
+    buffer.extend(&int_buf[0..req_sz]);
+    input_stream.consume(req_sz);
 
     return Ok(());
 }
@@ -92,7 +75,7 @@ pub fn process_lz77(input_stream: &mut BufReader<File>) -> Result<Vec<LzSymbol>,
     let mut window: VecDeque<u8> = VecDeque::new();
     let mut buffer: Vec<u8> = Vec::new();
 
-    replenish_containers(input_stream, &mut buffer, &mut window)?;
+    refill_buffer(input_stream, &mut buffer)?;
 
     while !buffer.is_empty() {
         let token: LzSymbol = get_token(&window, &buffer);
@@ -104,9 +87,12 @@ pub fn process_lz77(input_stream: &mut BufReader<File>) -> Result<Vec<LzSymbol>,
         };
 
         sym_strm.push(token);
-        window.drain(0..sz);
         window.extend(buffer.drain(0..sz));
-        replenish_containers(input_stream, &mut buffer, &mut window)?;
+
+        if window.len() > WINDOW_SIZE {
+            window.drain(0..window.len() - WINDOW_SIZE);
+        }
+        refill_buffer(input_stream, &mut buffer)?;
     }
 
     return Ok(sym_strm);
