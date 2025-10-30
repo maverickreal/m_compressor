@@ -16,6 +16,7 @@ pub struct MCompressor {
 
 pub enum CompressError {
     FileOpenError,
+    StreamReadError(String),
 }
 
 impl MCompressor {
@@ -29,20 +30,29 @@ impl MCompressor {
 
     pub fn new(in_file_path_str: &str) -> Result<MCompressor, CompressError> {
         let in_path: PathBuf = PathBuf::from(in_file_path_str);
-        let file: File = File::open(&in_path).map_err(|_| CompressError::FileOpenError)?;
+
+        let file: File = File::open(&in_path).map_err(|err| {
+            // e
+            println!("Error: {}", err);
+
+            return CompressError::FileOpenError;
+        })?;
         let mut out_path_os_string = in_path.as_os_str().to_owned();
 
         out_path_os_string.push(".mc");
 
-        Ok(Self {
+        let mut self_obj = Self {
             in_file_path: in_path,
             out_file_path: PathBuf::from(out_path_os_string),
-            reader: BufReader::with_capacity(lz77::WINDOW_SIZE, file),
-        })
+            reader: BufReader::with_capacity(lz77::READER_CAPACITY, file),
+        };
+        self_obj.compress()?;
+        return Ok(self_obj);
     }
 
-    pub fn compress(&self) -> Result<(), CompressError> {
+    fn compress(&mut self) -> Result<(), CompressError> {
         let symbols: Vec<LzSymbol> = lz77::process_lz77(&mut self.reader)?;
+        // println!("#@!0\n{:?}", symbols);
         return Ok(());
     }
 }

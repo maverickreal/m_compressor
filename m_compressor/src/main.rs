@@ -15,7 +15,7 @@ fn main() {
                     m_comp.get_out_file_path()
                 );
             } else {
-                println!("Error: Could not open or process the file path!");
+                println!("Compression failed.");
             }
         }
         Err(err) => {

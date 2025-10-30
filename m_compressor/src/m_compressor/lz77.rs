@@ -1,11 +1,12 @@
+use crate::m_compressor::CompressError;
+
 use std::{
     collections::VecDeque,
     fs::File,
     io::{BufRead, BufReader},
 };
 
-pub enum LzError {}
-
+#[derive(Debug)]
 pub enum LzSymbol {
     Literal(u8),
     Pointer { dist: u16, len: u16 },
@@ -14,6 +15,7 @@ pub enum LzSymbol {
 pub const WINDOW_SIZE: usize = 1 << 15;
 pub const MIN_MATCH_SEARCH_SIZE: usize = 3;
 pub const MAX_MATCH_SEARCH_SIZE: usize = 258;
+pub const READER_CAPACITY: usize = 1 << 27;
 
 fn get_token(window: &VecDeque<u8>, buffer: &Vec<u8>) -> LzSymbol {
     // TODO: can/must be efficient
@@ -21,16 +23,13 @@ fn get_token(window: &VecDeque<u8>, buffer: &Vec<u8>) -> LzSymbol {
     let mut mx_len = 0;
 
     for i in (0..window.len()).rev() {
-        if mx_len == MAX_MATCH_SEARCH_SIZE {
+        if mx_len == buffer.len() {
             break;
         }
 
         let mut j = i;
 
-        while j < window.len().min(buffer.len())
-            && window[j] == buffer[j - i]
-            && (j - i) < MAX_MATCH_SEARCH_SIZE
-        {
+        while j < window.len() && (j - i) < buffer.len() && window[j] == buffer[j - i] {
             j += 1;
         }
 
@@ -54,30 +53,41 @@ fn replenish_containers(
     input_stream: &mut BufReader<File>,
     buffer: &mut Vec<u8>,
     window: &mut VecDeque<u8>,
-) -> Result<(), std::io::Error> {
-    let strm_to_buf_transfer =
-        |stream_: &mut BufReader<File>, buf_: &mut Vec<u8>| -> Result<(), std::io::Error> {
-            let int_buf = stream_.fill_buf()?;
-            let req_sz = int_buf.len().min(WINDOW_SIZE - buf_.len());
+) -> Result<(), CompressError> {
+    let strm_to_que_transfer = |stream_: &mut BufReader<File>,
+                                buf_: &mut VecDeque<u8>,
+                                exp_sz: usize|
+     -> Result<(), CompressError> {
+        let int_buf = stream_.fill_buf().map_err(|err| {
+            println!("Error: {}", err); // e
 
-            buf_.reserve(req_sz);
-            buf_.extend_from_slice(&int_buf[0..req_sz]);
-            stream_.consume(req_sz);
+            return CompressError::StreamReadError(String::from(
+                "An error occurred while reading from the input.",
+            ));
+        })?;
 
-            return Ok(());
-        };
+        let req_sz = int_buf.len().min(exp_sz - buf_.len());
 
-    strm_to_buf_transfer(input_stream, buffer)?;
+        buf_.reserve(req_sz);
+        buf_.extend(&int_buf[0..req_sz]);
+        stream_.consume(req_sz);
 
-    let req_sz = buffer.len().min(WINDOW_SIZE - window.len());
-    window.extend(buffer.drain(0..req_sz));
+        return Ok(());
+    };
 
-    strm_to_buf_transfer(input_stream, buffer)?;
+    let mut buf_cpy = VecDeque::from_iter(buffer.drain(..));
+    let req_sz = buf_cpy.len().min(WINDOW_SIZE - window.len());
+    window.extend(buf_cpy.drain(0..req_sz));
+
+    strm_to_que_transfer(input_stream, window, WINDOW_SIZE)?;
+    strm_to_que_transfer(input_stream, &mut buf_cpy, MAX_MATCH_SEARCH_SIZE)?;
+
+    *buffer = Vec::from_iter(buf_cpy);
 
     return Ok(());
 }
 
-pub fn process_lz77(input_stream: &mut BufReader<File>) -> Result<Vec<LzSymbol>, LzError> {
+pub fn process_lz77(input_stream: &mut BufReader<File>) -> Result<Vec<LzSymbol>, CompressError> {
     let mut sym_strm: Vec<LzSymbol> = Vec::new();
     let mut window: VecDeque<u8> = VecDeque::new();
     let mut buffer: Vec<u8> = Vec::new();
