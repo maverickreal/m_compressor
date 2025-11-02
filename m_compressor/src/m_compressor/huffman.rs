@@ -1,6 +1,10 @@
-use std::io::BufReader;
+use std::{fs::File, io::BufWriter};
 
-pub enum HuffmanError {}
+use crate::m_compressor::{CompressError, lz77::LzSymbol};
 
-pub trait Huffman {
+pub fn process_huffman(
+    lz_symols: &Vec<LzSymbol>,
+    writer: &mut BufWriter<File>,
+) -> Result<(), CompressError> {
+    Ok(())
 }

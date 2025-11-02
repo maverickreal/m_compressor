@@ -1,9 +1,10 @@
 use std::{
     fs::File,
-    io::BufReader,
+    io::{BufReader, BufWriter},
     path::{Path, PathBuf},
 };
 
+mod huffman;
 mod lz77;
 
 pub struct MCompressor {
@@ -43,10 +44,18 @@ impl MCompressor {
             eprintln!("Error: {}", err);
             return CompressError::FileOpenError;
         })?;
+        let out_file = File::create(&self.out_file_path).map_err(|err| -> CompressError {
+            eprintln!("Error: {}", err);
+            return CompressError::FileOpenError;
+        })?;
 
         let mut reader = BufReader::with_capacity(lz77::READER_CAPACITY, in_file);
+        let mut writer = BufWriter::new(out_file);
 
         let symbols = lz77::process_lz77(&mut reader)?;
+
+        huffman::process_huffman(&symbols, &mut writer)?;
+
         Ok(())
     }
 }
