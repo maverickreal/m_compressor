@@ -1,5 +1,6 @@
 use std::io::Read;
 
+mod constants;
 mod m_compressor;
 
 fn main() {

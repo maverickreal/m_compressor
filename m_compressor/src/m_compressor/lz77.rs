@@ -1,4 +1,5 @@
-use crate::m_compressor::CompressError;
+/// This is a standalone program that implements LZ77 compression.
+use crate::{constants, m_compressor::CompressError};
 
 use std::{
     collections::VecDeque,
@@ -17,6 +18,9 @@ pub const MIN_MATCH_SEARCH_SIZE: usize = 3;
 pub const MAX_MATCH_SEARCH_SIZE: usize = 258;
 pub const READER_CAPACITY: usize = 1 << 27;
 
+/// Gets the next token from the window and buffer.
+/// If a match of size at least MIN_MATCH_SEARCH_SIZE isn't found,
+/// returns a literal. Otherwise returns a pointer.
 fn get_token(window: &VecDeque<u8>, buffer: &Vec<u8>) -> LzSymbol {
     // TODO: can/must be efficient
     let mut mx_ind = 0;
@@ -49,6 +53,7 @@ fn get_token(window: &VecDeque<u8>, buffer: &Vec<u8>) -> LzSymbol {
     };
 }
 
+/// Refills the buffer from the input stream.
 fn refill_buffer(
     input_stream: &mut BufReader<File>,
     buffer: &mut Vec<u8>,
@@ -56,9 +61,7 @@ fn refill_buffer(
     let int_buf = input_stream.fill_buf().map_err(|err| {
         eprintln!("Error: {}", err); // e
 
-        return CompressError::StreamReadError(String::from(
-            "An error occurred while reading from the input.",
-        ));
+        return CompressError::StreamReadError(constants::STREAM_READ_ERROR.to_string());
     })?;
 
     let req_sz = int_buf.len().min(MAX_MATCH_SEARCH_SIZE - buffer.len());
@@ -70,8 +73,12 @@ fn refill_buffer(
     return Ok(());
 }
 
-pub fn process_lz77(input_stream: &mut BufReader<File>) -> Result<Vec<LzSymbol>, CompressError> {
-    let mut sym_strm: Vec<LzSymbol> = Vec::new();
+/// Returns a sequence of LZ77 symbols
+/// corresponding to the input stream.
+pub fn process_lz77(
+    input_stream: &mut BufReader<File>,
+    sym_strm: &mut VecDeque<LzSymbol>,
+) -> Result<(), CompressError> {
     let mut window: VecDeque<u8> = VecDeque::new();
     let mut buffer: Vec<u8> = Vec::new();
 
@@ -86,7 +93,7 @@ pub fn process_lz77(input_stream: &mut BufReader<File>) -> Result<Vec<LzSymbol>,
             1
         };
 
-        sym_strm.push(token);
+        sym_strm.push_back(token);
         window.extend(buffer.drain(0..sz));
 
         if window.len() > WINDOW_SIZE {
@@ -95,5 +102,5 @@ pub fn process_lz77(input_stream: &mut BufReader<File>) -> Result<Vec<LzSymbol>,
         refill_buffer(input_stream, &mut buffer)?;
     }
 
-    return Ok(sym_strm);
+    return Ok(());
 }
