@@ -2,6 +2,7 @@ use std::io::Read;
 
 mod constants;
 mod m_compressor;
+mod utils;
 
 fn main() {
     let mut file_path: String = String::new();

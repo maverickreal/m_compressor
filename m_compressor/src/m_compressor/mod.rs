@@ -1,19 +1,22 @@
-/// The central module that implements DEFLATE.
-/// Orchestrates the following sequence of operations:
-/// 1. Pump the input to the LZ77 transformer.
-/// 2. Pump the results from above to the Huffman transformer
-/// 3. Put the results from above in a file.
+/* The central module that implements DEFLATE.
+ * Orchestrates the following sequence of operations:
+ * 1. Pump the input to the LZ77 transformer.
+ * 2. Pump the results from above to the Huffman transformer
+ */
+
+use crate::{
+    m_compressor::lz77::LzSymbol,
+    utils::bit_writer::BitWriter,
+};
 use std::{
     collections::VecDeque,
     fs::File,
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
-use crate::m_compressor::lz77::LzSymbol;
-
 mod huffman;
-mod lz77;
+pub(crate) mod lz77;
 
 /// The actual struct deployed by this library.
 #[derive(Debug)]
@@ -51,14 +54,6 @@ impl MCompressor {
         }
     }
 
-    /// Transforms LZ77 symbols to Huffman symbols.
-    fn lz_to_hm_transformer(
-        lz_symbols: &mut VecDeque<LzSymbol>,
-        hm_symbols: &mut Vec<u8>,
-    ) -> Result<(), CompressError> {
-        Ok(())
-    }
-
     pub fn compress(&self) -> Result<(), CompressError> {
         let in_file = File::open(&self.in_file_path).map_err(|err| -> CompressError {
             eprintln!("Error: {}", err);
@@ -71,9 +66,8 @@ impl MCompressor {
         })?;
 
         let mut reader = BufReader::with_capacity(lz77::READER_CAPACITY, in_file);
-        let mut writer = BufWriter::new(out_file);
+        let bit_writer = BitWriter::new(out_file);
         let mut lz_symbols: VecDeque<LzSymbol> = VecDeque::new();
-        let mut hm_symbols: Vec<u8> = Vec::new();
 
         loop {
             let is_eof = reader
@@ -89,15 +83,7 @@ impl MCompressor {
             }
 
             lz77::process_lz77(&mut reader, &mut lz_symbols)?;
-            self.lz_to_hm_transformer(&mut lz_symbols, &mut hm_symbols);
-            huffman::process_huffman(&lz_symbols, &mut hm_symbols)?;
-
-            writer.write_all(&hm_symbols).map_err(|err| {
-                eprintln!("Error: {}", err);
-                return CompressError::FileWriteError;
-            })?;
-
-            hm_symbols.clear();
+            huffman::process_huffman(&lz_symbols, &bit_writer)?;
         }
         Ok(())
     }

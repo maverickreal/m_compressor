@@ -4,10 +4,11 @@ use crate::{constants, m_compressor::CompressError};
 use std::{
     collections::VecDeque,
     fs::File,
+    hash::Hash,
     io::{BufRead, BufReader},
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Ord, PartialOrd)]
 pub enum LzSymbol {
     Literal(u8),
     Pointer { dist: u16, len: u16 },
