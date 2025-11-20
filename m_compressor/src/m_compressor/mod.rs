@@ -85,6 +85,7 @@ impl MCompressor {
             lz77::process_lz77(&mut reader, &mut lz_symbols)?;
             huffman::process_huffman(&lz_symbols, &bit_writer)?;
         }
+        // TODO: write end of stream token
         Ok(())
     }
 }

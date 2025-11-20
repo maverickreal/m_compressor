@@ -13,7 +13,7 @@ type LitLenCntArr = [usize; 286];
 type DistCntArr = [usize; 30];
 type HuffmanCode = (u16, u8, u8, u16);
 
-fn get_hm_code_for_lz_symbol(symbol: &LzSymbol) -> HuffmanCode {
+fn get_hm_code_for_lz_symbol(dist: &u16, len: &u16) -> HuffmanCode {
     todo!()
 }
 
@@ -26,8 +26,9 @@ fn put_lit_len_dist_freq(
         match symbol {
             LzSymbol::Literal(lit) => lit_len_cnt[*lit as usize] += 1,
             LzSymbol::Pointer { dist, len } => {
-                lit_len_cnt[*len as usize] += 1;
-                dist_cnt[*dist as usize] += 1;
+                let (dist_code, _, len_code, _) = get_hm_code_for_lz_symbol(dist, len);
+                lit_len_cnt[len_code as usize] += 1;
+                dist_cnt[dist_code as usize] += 1;
             }
         }
     }

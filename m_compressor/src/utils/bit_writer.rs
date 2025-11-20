@@ -1,4 +1,7 @@
-use std::{fs::File, io::BufWriter};
+use std::{
+    fs::File,
+    io::{BufWriter, Write},
+};
 
 pub struct BitWriter {
     writer: BufWriter<File>,
@@ -23,7 +26,7 @@ impl BitWriter {
             let shift = self.bit_count - 8;
             let byte = (self.accumulator >> shift) as u8;
             // TODO: handle error properly
-            use std::io::Write;
+
             let _ = self.writer.write(&[byte]);
             self.bit_count -= 8;
             // Mask out the written bits to keep accumulator clean, though not strictly necessary if we shift correctly next time
@@ -39,12 +42,12 @@ impl BitWriter {
         if self.bit_count > 0 {
             let shift = 8 - self.bit_count;
             let byte = (self.accumulator << shift) as u8;
-            use std::io::Write;
+
             let _ = self.writer.write(&[byte]);
             self.accumulator = 0;
             self.bit_count = 0;
         }
-        use std::io::Write;
+
         let _ = self.writer.flush();
     }
 }
