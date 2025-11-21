@@ -9,8 +9,8 @@ use crate::{
     utils::{bit_writer::BitWriter, huffman_tree_node::HuffmanTreeNode},
 };
 
-type LitLenCntArr = [usize; 286];
-type DistCntArr = [usize; 30];
+type LitLenCntArr = [usize; constants::LIT_LEN_ALPHABET_SIZE];
+type DistCntArr = [usize; constants::DIST_ALPHABET_SIZE];
 type CanonicalCodesMapEntry = (u128, u8);
 
 fn get_len_dist_code_util(len_dist: u16, codes: &Vec<u16>, ind: usize) -> u16 {
@@ -46,10 +46,13 @@ fn get_hm_code_for_lz_ptr(dist: &u16, len: &u16) -> (u16, u16) {
     return (dist_code, len_code);
 }
 
+/// Populates the frequencies of
+/// the current block's alphabet.
 fn put_lit_len_dist_freq(
     lit_len_cnt: &mut LitLenCntArr,
     dist_cnt: &mut DistCntArr,
     lz_symbols: &VecDeque<LzSymbol>,
+    is_last: bool,
 ) {
     for symbol in lz_symbols {
         match symbol {
@@ -62,11 +65,17 @@ fn put_lit_len_dist_freq(
             }
         }
     }
-    // This signifies the END_OF_BLOCK
-    // token in compressed data.
-    lit_len_cnt[constants::END_OF_BLOCK_ID] = 1;
+
+    if is_last {
+        lit_len_cnt[constants::END_OF_STREAM_ID] = 1;
+    }
 }
 
+/// Creates and returns a tree made of HuffmanTreeNodes.
+/// Uses frequencies of the symbols as weights. Higher
+/// weighted symbols are assigned relatively shorter codes
+/// by building the tree in a fashion which leads to leaves
+/// of these symbols being at comparatively smaller paths.
 fn get_huffman_tree(arr: &Vec<usize>) -> HuffmanTreeNode {
     let mut heap: BinaryHeap<Reverse<HuffmanTreeNode>> = BinaryHeap::new();
 
@@ -82,6 +91,10 @@ fn get_huffman_tree(arr: &Vec<usize>) -> HuffmanTreeNode {
         let new_node = HuffmanTreeNode::new_internal(node_1, node_2);
 
         heap.push(Reverse(new_node));
+    }
+
+    if heap.is_empty() {
+        return HuffmanTreeNode::new_leaf(0, 0);
     }
     let Reverse(root) = heap.pop().unwrap();
 
@@ -118,6 +131,56 @@ fn map_canonical_codes_to_lz_symbols(
     }
 }
 
+/// Obtains the extra bits-encoded canonical codes
+/// corresponding to the LzSymbols, and then writes
+/// them to the bit stream using the provided Huffman maps.
+fn write_to_stream(
+    symbol: &LzSymbol,
+    lit_len_canonical_map: &Vec<CanonicalCodesMapEntry>,
+    dist_canonical_map: &Vec<CanonicalCodesMapEntry>,
+    bit_writer: &mut BitWriter,
+) -> Result<(), CompressError> {
+    match symbol {
+        LzSymbol::Literal(lit) => {
+            let (code, code_len) = lit_len_canonical_map[*lit as usize];
+            bit_writer
+                .write_bits(code, code_len)
+                .map_err(|_| CompressError::FileWriteError)?;
+        }
+        LzSymbol::Pointer { dist, len } => {
+            let (dist_code, len_code) = get_hm_code_for_lz_ptr(dist, len);
+            let (len_code, len_code_sz) = lit_len_canonical_map[len_code as usize];
+            let extra_bits_len = constants::LEN_EXTRA_BITS[(len_code - 257) as usize];
+
+            bit_writer
+                .write_bits(len_code, len_code_sz)
+                .map_err(|_| CompressError::FileWriteError)?;
+
+            if extra_bits_len > 0 {
+                let extra_bits = *len as u128 & ((1 << extra_bits_len) - 1);
+                bit_writer
+                    .write_bits(extra_bits, extra_bits_len as u8)
+                    .map_err(|_| CompressError::FileWriteError)?;
+            }
+            let (dist_code, dist_code_sz) = dist_canonical_map[dist_code as usize];
+            let extra_bits_dist = constants::DIST_EXTRA_BITS[dist_code as usize];
+
+            bit_writer
+                .write_bits(dist_code, dist_code_sz)
+                .map_err(|_| CompressError::FileWriteError)?;
+
+            if extra_bits_dist > 0 {
+                let extra_bits = *dist as u128 & ((1 << extra_bits_dist) - 1);
+                bit_writer
+                    .write_bits(extra_bits, extra_bits_dist as u8)
+                    .map_err(|_| CompressError::FileWriteError)?;
+            }
+        }
+    }
+
+    return Ok(());
+}
+
 /// Produces a bit-stream corresponding to the LzSymbol sequence,
 /// and writes it into a file. The first parameter (lz_symbols),
 /// represents one block.
@@ -127,20 +190,40 @@ fn map_canonical_codes_to_lz_symbols(
 /// full-static, full-dynamic, etc.
 pub fn process_huffman(
     lz_symbols: &VecDeque<LzSymbol>,
-    bit_writer: &BitWriter,
+    bit_writer: &mut BitWriter,
+    is_last: bool,
 ) -> Result<(), CompressError> {
-    let mut lit_len_cnt: LitLenCntArr = [0; 286];
-    let mut dist_cnt: DistCntArr = [0; 30];
-    let mut lit_len_canonical_map: Vec<CanonicalCodesMapEntry> = Vec::new();
-    let mut dist_canonical_map: Vec<CanonicalCodesMapEntry> = Vec::new();
+    let mut lit_len_cnt: LitLenCntArr = [0; constants::LIT_LEN_ALPHABET_SIZE];
+    let mut dist_cnt: DistCntArr = [0; constants::DIST_ALPHABET_SIZE];
+    let mut lit_len_canonical_map: Vec<CanonicalCodesMapEntry> =
+        vec![(0, 0); constants::LIT_LEN_ALPHABET_SIZE];
+    let mut dist_canonical_map: Vec<CanonicalCodesMapEntry> =
+        vec![(0, 0); constants::DIST_ALPHABET_SIZE];
 
-    put_lit_len_dist_freq(&mut lit_len_cnt, &mut dist_cnt, lz_symbols);
+    put_lit_len_dist_freq(&mut lit_len_cnt, &mut dist_cnt, lz_symbols, is_last);
 
     let lit_len_tree_head_node: HuffmanTreeNode = get_huffman_tree(&lit_len_cnt.to_vec());
     let dist_tree_head_node: HuffmanTreeNode = get_huffman_tree(&dist_cnt.to_vec());
 
     map_canonical_codes_to_lz_symbols(&mut lit_len_canonical_map, lit_len_tree_head_node, 0, 0);
     map_canonical_codes_to_lz_symbols(&mut dist_canonical_map, dist_tree_head_node, 0, 0);
+
+    for symbol in lz_symbols {
+        write_to_stream(
+            &symbol,
+            &lit_len_canonical_map,
+            &dist_canonical_map,
+            bit_writer,
+        )?;
+    }
+
+    if is_last {
+        let (eos_code, eos_code_len) = lit_len_canonical_map[constants::END_OF_STREAM_ID];
+
+        bit_writer
+            .write_bits(eos_code, eos_code_len)
+            .map_err(|_| CompressError::FileWriteError)?;
+    }
 
     Ok(())
 }

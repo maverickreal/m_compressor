@@ -10,7 +10,7 @@ use std::{
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Ord, PartialOrd)]
 pub enum LzSymbol {
-    Literal(u8),
+    Literal(u16),
     Pointer { dist: u16, len: u16 },
 }
 
@@ -45,7 +45,7 @@ fn get_token(window: &VecDeque<u8>, buffer: &Vec<u8>) -> LzSymbol {
     }
 
     return if mx_len < MIN_MATCH_SEARCH_SIZE {
-        LzSymbol::Literal(buffer[0])
+        LzSymbol::Literal(buffer[0].into())
     } else {
         LzSymbol::Pointer {
             dist: (window.len() - mx_ind) as u16,
@@ -60,7 +60,7 @@ fn refill_buffer(
     buffer: &mut Vec<u8>,
 ) -> Result<(), CompressError> {
     let int_buf = input_stream.fill_buf().map_err(|err| {
-        eprintln!("Error: {}", err); // e
+        println!("Error: {}", err); // e
 
         return CompressError::StreamReadError(constants::STREAM_READ_ERROR.to_string());
     })?;
@@ -102,6 +102,7 @@ pub fn process_lz77(
         }
         refill_buffer(input_stream, &mut buffer)?;
     }
+    sym_strm.push_back(LzSymbol::Literal(constants::END_OF_BLOCK_ID as u16));
 
     return Ok(());
 }

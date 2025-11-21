@@ -56,36 +56,33 @@ impl MCompressor {
 
     pub fn compress(&self) -> Result<(), CompressError> {
         let in_file = File::open(&self.in_file_path).map_err(|err| -> CompressError {
-            eprintln!("Error: {}", err);
+            println!("Error: {}", err);
             return CompressError::FileOpenError;
         })?;
 
         let out_file = File::create(&self.out_file_path).map_err(|err| -> CompressError {
-            eprintln!("Error: {}", err);
+            println!("Error: {}", err);
             return CompressError::FileOpenError;
         })?;
 
         let mut reader = BufReader::with_capacity(lz77::READER_CAPACITY, in_file);
-        let bit_writer = BitWriter::new(out_file);
+        let mut bit_writer = BitWriter::new(out_file);
         let mut lz_symbols: VecDeque<LzSymbol> = VecDeque::new();
 
         loop {
-            let is_eof = reader
-                .fill_buf()
-                .map_err(|err| {
-                    eprintln!("Error: {}", err);
-                    return CompressError::StreamReadError(err.to_string());
-                })?
-                .is_empty();
-
-            if is_eof {
-                break;
-            }
+            let is_last = reader.fill_buf().map_err(|err| {
+                println!("Error: {}", err);
+                return CompressError::StreamReadError(err.to_string());
+            })?.is_empty();
 
             lz77::process_lz77(&mut reader, &mut lz_symbols)?;
-            huffman::process_huffman(&lz_symbols, &bit_writer)?;
+            huffman::process_huffman(&lz_symbols, &mut bit_writer, is_last)?;
+
+            if is_last {
+                break;
+            }
         }
-        // TODO: write end of stream token
-        Ok(())
+
+        return Ok(());
     }
 }
