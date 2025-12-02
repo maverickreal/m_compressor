@@ -22,11 +22,11 @@ pub struct MCompressor {
     out_file_path: PathBuf,
 }
 
-/// All errors throughoutthe library are replaced with these errors.
+/// All errors throughout the library are replaced with these errors.
 #[derive(Debug)]
 pub enum CompressError {
     FileOpen,
-    StreamRead(String),
+    StreamRead,
     FileWrite,
 }
 
@@ -35,9 +35,6 @@ impl MCompressor {
         &self.out_file_path
     }
 
-    pub fn get_in_file_path(&self) -> &Path {
-        &self.in_file_path
-    }
 
     pub fn new(in_file_path: impl AsRef<Path>) -> Self {
         let in_path = in_file_path.as_ref().to_path_buf();
@@ -70,7 +67,7 @@ impl MCompressor {
         loop {
             let int_buff = reader.fill_buf().map_err(|err| {
                 println!("Error: {err}");
-                CompressError::StreamRead(err.to_string())
+                CompressError::StreamRead
             })?;
             let bytes_read = int_buff.len();
 

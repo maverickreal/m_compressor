@@ -41,14 +41,15 @@ impl BitWriter {
     }
 
     /// Cycles through a procedure of writing a number of bits
-    /// to the accumulator byte, and fliushing the accumulator
+    /// to the accumulator byte, and flushing the accumulator
     /// byte to the BufWriter as soon as it has accumulated 8 bits.
+    /// Uses LSB-first bit ordering (standard DEFLATE).
     pub fn write_bits(&mut self, value: u128, num_bits: u8) -> io::Result<()> {
-        for i in (0..num_bits).rev() {
-            let is_bit_set = (value >> i) & 1 == 1;
+        for i in 0..num_bits {
+            let is_bit_set = ((value >> i) & 1) == 1;
 
             if is_bit_set {
-                let bit_mask = 1 << (BIT_COUNT_LIMIT - 1 - self.bit_count);
+                let bit_mask = 1 << self.bit_count;
                 self.buffer |= bit_mask
             }
             self.bit_count += 1;
