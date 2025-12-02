@@ -4,10 +4,7 @@
  * 2. Pump the results from above to the Huffman transformer
  */
 
-use crate::{
-    m_compressor::lz77::LzSymbol,
-    utils::bit_writer::BitWriter,
-};
+use crate::{constants, m_compressor::lz77::LzSymbol, utils::bit_writer::BitWriter};
 use std::{
     collections::VecDeque,
     fs::File,
@@ -28,9 +25,9 @@ pub struct MCompressor {
 /// All errors throughoutthe library are replaced with these errors.
 #[derive(Debug)]
 pub enum CompressError {
-    FileOpenError,
-    StreamReadError(String),
-    FileWriteError,
+    FileOpen,
+    StreamRead(String),
+    FileWrite,
 }
 
 impl MCompressor {
@@ -56,33 +53,36 @@ impl MCompressor {
 
     pub fn compress(&self) -> Result<(), CompressError> {
         let in_file = File::open(&self.in_file_path).map_err(|err| -> CompressError {
-            println!("Error: {}", err);
-            return CompressError::FileOpenError;
+            println!("Error: {err}");
+            CompressError::FileOpen
         })?;
 
         let out_file = File::create(&self.out_file_path).map_err(|err| -> CompressError {
-            println!("Error: {}", err);
-            return CompressError::FileOpenError;
+            println!("Error: {err}");
+            CompressError::FileOpen
         })?;
 
-        let mut reader = BufReader::with_capacity(lz77::READER_CAPACITY, in_file);
+        let mut reader = BufReader::with_capacity(constants::READER_CAPACITY, in_file);
         let mut bit_writer = BitWriter::new(out_file);
         let mut lz_symbols: VecDeque<LzSymbol> = VecDeque::new();
+        let mut window: VecDeque<u8> = VecDeque::new();
 
         loop {
-            let is_last = reader.fill_buf().map_err(|err| {
-                println!("Error: {}", err);
-                return CompressError::StreamReadError(err.to_string());
-            })?.is_empty();
+            let int_buff = reader.fill_buf().map_err(|err| {
+                println!("Error: {err}");
+                CompressError::StreamRead(err.to_string())
+            })?;
+            let bytes_read = int_buff.len();
 
-            lz77::process_lz77(&mut reader, &mut lz_symbols)?;
-            huffman::process_huffman(&lz_symbols, &mut bit_writer, is_last)?;
+            lz77::process_lz77(int_buff, &mut lz_symbols, &mut window)?;
+            huffman::process_huffman(&mut lz_symbols, &mut bit_writer, bytes_read == 0)?;
+            reader.consume(bytes_read);
 
-            if is_last {
+            if bytes_read == 0 {
                 break;
             }
         }
 
-        return Ok(());
+        Ok(())
     }
 }

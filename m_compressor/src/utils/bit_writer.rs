@@ -37,7 +37,7 @@ impl BitWriter {
         self.buffer = 0;
         self.bit_count = 0;
 
-        return Ok(());
+        Ok(())
     }
 
     /// Cycles through a procedure of writing a number of bits
@@ -58,7 +58,7 @@ impl BitWriter {
             }
         }
 
-        return Ok(());
+        Ok(())
     }
 
     /// Flushes the accumulator byte
@@ -69,12 +69,12 @@ impl BitWriter {
         }
         self.writer.flush()?;
 
-        return Ok(());
+        Ok(())
     }
 }
 
 impl Drop for BitWriter {
     fn drop(&mut self) {
-        self.flush_all();
+        let _ = self.flush_all();
     }
 }

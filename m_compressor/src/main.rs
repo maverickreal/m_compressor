@@ -22,8 +22,7 @@ fn main() {
             }
         }
         Err(err) => {
-            println!("Error reading input: {}", err);
-            return;
+            println!("Error reading input: {err}");
         }
     }
 }

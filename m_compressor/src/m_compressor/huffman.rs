@@ -13,37 +13,20 @@ type LitLenCntArr = [usize; constants::LIT_LEN_ALPHABET_SIZE];
 type DistCntArr = [usize; constants::DIST_ALPHABET_SIZE];
 type CanonicalCodesMapEntry = (u128, u8);
 
-fn get_len_dist_code_util(len_dist: u16, codes: &Vec<u16>, ind: usize) -> u16 {
-    let mut in_range: bool = codes[ind] == len_dist;
-    in_range = in_range || (ind + 1 == codes.len());
-    in_range = in_range || (codes[ind + 1] > len_dist);
-
-    return if in_range { codes[ind] } else { 0 };
+fn get_code_index(val: u16, base_codes: &[u16]) -> u16 {
+    for (i, &base) in base_codes.iter().enumerate().rev() {
+        if val >= base {
+            return i as u16;
+        }
+    }
+    0
 }
 
 fn get_hm_code_for_lz_ptr(dist: &u16, len: &u16) -> (u16, u16) {
-    let mut len_code = 0;
-    let mut dist_code = 0;
-    let dist_base_codes_vec = constants::DIST_BASE_CODES.to_vec();
-    let len_base_codes_vec = constants::LEN_BASE_CODES.to_vec();
-    let sz_len = dist_base_codes_vec.len();
-    let sz_dist = len_base_codes_vec.len();
+    let dist_idx = get_code_index(*dist, &constants::DIST_BASE_CODES);
+    let len_idx = get_code_index(*len, &constants::LEN_BASE_CODES);
 
-    for i in 0..sz_len.max(sz_dist) {
-        if len_code > 0 && dist_code > 0 {
-            break;
-        }
-
-        if i < sz_len {
-            len_code = len_code | get_len_dist_code_util(*len, &len_base_codes_vec, i);
-        }
-
-        if i < sz_dist {
-            dist_code = dist_code | get_len_dist_code_util(*dist, &dist_base_codes_vec, i);
-        }
-    }
-
-    return (dist_code, len_code);
+    (dist_idx, 257 + len_idx)
 }
 
 /// Populates the frequencies of
@@ -98,7 +81,7 @@ fn get_huffman_tree(arr: &Vec<usize>) -> HuffmanTreeNode {
     }
     let Reverse(root) = heap.pop().unwrap();
 
-    return root;
+    root
 }
 
 fn map_canonical_codes_to_lz_symbols(
@@ -145,40 +128,60 @@ fn write_to_stream(
             let (code, code_len) = lit_len_canonical_map[*lit as usize];
             bit_writer
                 .write_bits(code, code_len)
-                .map_err(|_| CompressError::FileWriteError)?;
+                .map_err(|_| CompressError::FileWrite)?;
         }
         LzSymbol::Pointer { dist, len } => {
-            let (dist_code, len_code) = get_hm_code_for_lz_ptr(dist, len);
-            let (len_code, len_code_sz) = lit_len_canonical_map[len_code as usize];
-            let extra_bits_len = constants::LEN_EXTRA_BITS[(len_code - 257) as usize];
+            let (dist_sym, len_sym) = get_hm_code_for_lz_ptr(dist, len);
+            let (len_code, len_code_sz) = lit_len_canonical_map[len_sym as usize];
+            let extra_bits_len = constants::LEN_EXTRA_BITS[(len_sym - 257) as usize];
 
             bit_writer
                 .write_bits(len_code, len_code_sz)
-                .map_err(|_| CompressError::FileWriteError)?;
+                .map_err(|_| CompressError::FileWrite)?;
 
             if extra_bits_len > 0 {
                 let extra_bits = *len as u128 & ((1 << extra_bits_len) - 1);
                 bit_writer
                     .write_bits(extra_bits, extra_bits_len as u8)
-                    .map_err(|_| CompressError::FileWriteError)?;
+                    .map_err(|_| CompressError::FileWrite)?;
             }
-            let (dist_code, dist_code_sz) = dist_canonical_map[dist_code as usize];
-            let extra_bits_dist = constants::DIST_EXTRA_BITS[dist_code as usize];
+            let (dist_code, dist_code_sz) = dist_canonical_map[dist_sym as usize];
+            let extra_bits_dist = constants::DIST_EXTRA_BITS[dist_sym as usize];
 
             bit_writer
                 .write_bits(dist_code, dist_code_sz)
-                .map_err(|_| CompressError::FileWriteError)?;
+                .map_err(|_| CompressError::FileWrite)?;
 
             if extra_bits_dist > 0 {
                 let extra_bits = *dist as u128 & ((1 << extra_bits_dist) - 1);
                 bit_writer
-                    .write_bits(extra_bits, extra_bits_dist as u8)
-                    .map_err(|_| CompressError::FileWriteError)?;
+                    .write_bits(extra_bits, extra_bits_dist)
+                    .map_err(|_| CompressError::FileWrite)?;
             }
         }
     }
 
-    return Ok(());
+    Ok(())
+}
+
+fn write_header(
+    lit_len_canonical_map: &Vec<CanonicalCodesMapEntry>,
+    dist_canonical_map: &Vec<CanonicalCodesMapEntry>,
+    bit_writer: &mut BitWriter,
+) -> Result<(), CompressError> {
+    for (_, len) in lit_len_canonical_map {
+        bit_writer
+            .write_bits(*len as u128, 8)
+            .map_err(|_| CompressError::FileWrite)?;
+    }
+
+    for (_, len) in dist_canonical_map {
+        bit_writer
+            .write_bits(*len as u128, 8)
+            .map_err(|_| CompressError::FileWrite)?;
+    }
+
+    Ok(())
 }
 
 /// Produces a bit-stream corresponding to the LzSymbol sequence,
@@ -189,7 +192,7 @@ fn write_to_stream(
 /// Alternatively, there are startehies, such as,
 /// full-static, full-dynamic, etc.
 pub fn process_huffman(
-    lz_symbols: &VecDeque<LzSymbol>,
+    lz_symbols: &mut VecDeque<LzSymbol>,
     bit_writer: &mut BitWriter,
     is_last: bool,
 ) -> Result<(), CompressError> {
@@ -208,7 +211,11 @@ pub fn process_huffman(
     map_canonical_codes_to_lz_symbols(&mut lit_len_canonical_map, lit_len_tree_head_node, 0, 0);
     map_canonical_codes_to_lz_symbols(&mut dist_canonical_map, dist_tree_head_node, 0, 0);
 
-    for symbol in lz_symbols {
+    write_header(&lit_len_canonical_map, &dist_canonical_map, bit_writer)?;
+
+    while !lz_symbols.is_empty() {
+        let symbol = lz_symbols.pop_front().unwrap();
+
         write_to_stream(
             &symbol,
             &lit_len_canonical_map,
@@ -222,7 +229,7 @@ pub fn process_huffman(
 
         bit_writer
             .write_bits(eos_code, eos_code_len)
-            .map_err(|_| CompressError::FileWriteError)?;
+            .map_err(|_| CompressError::FileWrite)?;
     }
 
     Ok(())

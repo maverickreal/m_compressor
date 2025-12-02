@@ -1,4 +1,4 @@
-pub const STREAM_READ_ERROR: &str = "An error occurred while reading from the input.";
+pub const READER_CAPACITY: usize = 1 << 20;
 
 /// [0-255] -> literal (use as is);
 /// [256] -> end of block token;
