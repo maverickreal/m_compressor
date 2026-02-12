@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     constants,
-    m_compressor::{CompressError, lz77::LzSymbol},
+    compressor::{CompressError, lz77::LzSymbol},
     utils::{bit_writer::BitWriter, huffman_tree_node::HuffmanTreeNode},
 };
 

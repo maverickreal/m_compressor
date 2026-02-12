@@ -1,5 +1,5 @@
 /// This is a standalone program that implements LZ77 compression.
-use crate::{constants, m_compressor::CompressError};
+use crate::{constants, compressor::CompressError};
 
 use std::{collections::VecDeque, hash::Hash};
 

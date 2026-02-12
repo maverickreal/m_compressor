@@ -4,7 +4,7 @@
  * 2. Pump the results from above to the Huffman transformer
  */
 
-use crate::{constants, m_compressor::lz77::LzSymbol, utils::bit_writer::BitWriter};
+use crate::{constants, compressor::lz77::LzSymbol, utils::bit_writer::BitWriter};
 use std::{
     collections::VecDeque,
     fs::File,
