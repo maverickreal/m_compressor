@@ -1,5 +1,5 @@
 /// This is a standalone program that implements LZ77 compression.
-use crate::{constants, compressor::CompressError};
+use crate::compressor::CompressError;
 
 use std::{collections::VecDeque, hash::Hash};
 
@@ -88,13 +88,6 @@ pub fn process_lz77(
             window.drain(0..window.len() - WINDOW_SIZE);
         }
         refill_buffer(&mut buffer);
-    }
-
-    if !out_chunks.is_empty() {
-        let eob_id = constants::END_OF_BLOCK_ID as u16;
-        let eob_lz_sym = LzSymbol::Literal(eob_id);
-
-        out_chunks.push_back(eob_lz_sym);
     }
 
     Ok(())

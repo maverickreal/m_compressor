@@ -1,8 +1,5 @@
 use std::io::Read;
-
-mod constants;
-mod compressor;
-mod utils;
+use m_compressor::compressor;
 
 fn main() {
     let mut file_path: String = String::new();

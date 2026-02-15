@@ -3,11 +3,9 @@ pub const READER_CAPACITY: usize = 1 << 20;
 /// [0-255] -> literal (use as is);
 /// [256] -> end of block token;
 /// [257-285] -> length codes;
-/// [286] -> end of stream token
-pub const LIT_LEN_ALPHABET_SIZE: usize = 287;
+pub const LIT_LEN_ALPHABET_SIZE: usize = 286;
 pub const DIST_ALPHABET_SIZE: usize = 30;
 pub const END_OF_BLOCK_ID: usize = 256;
-pub const END_OF_STREAM_ID: usize = LIT_LEN_ALPHABET_SIZE - 1;
 
 pub const LEN_BASE_CODES: [u16; 29] = [
     3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131,
