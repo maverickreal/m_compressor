@@ -4,6 +4,97 @@ enum ItemClass {
     Package(usize, usize),
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_limited_code_lengths_empty() {
+        let freqs: Vec<usize> = vec![];
+        let lengths = get_limited_code_lengths(&freqs, 15);
+        assert!(lengths.is_empty());
+    }
+
+    #[test]
+    fn test_get_limited_code_lengths_single_symbol() {
+        let freqs = vec![10];
+        let lengths = get_limited_code_lengths(&freqs, 15);
+        assert_eq!(lengths.len(), 1);
+        assert_eq!(lengths[0], 1);
+    }
+
+    #[test]
+    fn test_get_limited_code_lengths_two_symbols() {
+        let freqs = vec![5, 10];
+        let lengths = get_limited_code_lengths(&freqs, 15);
+        assert_eq!(lengths.len(), 2);
+        assert!(lengths[0] > 0);
+        assert!(lengths[1] > 0);
+    }
+
+    #[test]
+    fn test_get_limited_code_lengths_with_zeros() {
+        let freqs = vec![0, 10, 0, 5, 0];
+        let lengths = get_limited_code_lengths(&freqs, 15);
+        assert_eq!(lengths.len(), 5);
+        assert_eq!(lengths[0], 0);
+        assert_eq!(lengths[2], 0);
+        assert_eq!(lengths[4], 0);
+        assert!(lengths[1] > 0);
+        assert!(lengths[3] > 0);
+    }
+
+    #[test]
+    fn test_get_limited_code_lengths_all_zeros() {
+        let freqs = vec![0, 0, 0, 0, 0];
+        let lengths = get_limited_code_lengths(&freqs, 15);
+        assert_eq!(lengths.len(), 5);
+        assert!(lengths.iter().all(|&len| len == 0));
+    }
+
+    #[test]
+    fn test_get_limited_code_lengths_max_length() {
+        let freqs = vec![1, 2, 3, 4, 5];
+        let max_len = 15;
+        let lengths = get_limited_code_lengths(&freqs, max_len);
+        assert_eq!(lengths.len(), 5);
+        assert!(lengths.iter().all(|&len| len <= max_len));
+    }
+
+    #[test]
+    fn test_get_limited_code_lengths_small_max() {
+        let freqs = vec![1, 1, 1, 1, 1];
+        let max_len = 3;
+        let lengths = get_limited_code_lengths(&freqs, max_len);
+        assert_eq!(lengths.len(), 5);
+        assert!(lengths.iter().all(|&len| len <= max_len));
+    }
+
+    #[test]
+    fn test_get_limited_code_lengths_codebook_property() {
+        let freqs = vec![10, 20, 30, 40];
+        let lengths = get_limited_code_lengths(&freqs, 15);
+
+        let max_len = *lengths.iter().max().unwrap() as usize;
+        let mut counts = vec![0; max_len + 1];
+        for &len in &lengths {
+            if len > 0 {
+                counts[len as usize] += 1;
+            }
+        }
+
+        for l in 1..=max_len {
+            if counts[l] > 1 {
+                let mut sum = 0;
+                for j in l..=max_len {
+                    sum += counts[j] << (j - l);
+                }
+                assert!(sum <= 2, "Codebook property violated at length {}", l);
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Item {
     weight: usize,

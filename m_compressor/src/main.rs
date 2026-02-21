@@ -1,5 +1,5 @@
-use std::io::Read;
 use m_compressor::compressor;
+use std::io::Read;
 
 fn main() {
     let mut file_path: String = String::new();

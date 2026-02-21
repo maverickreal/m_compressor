@@ -4,7 +4,7 @@
  * 2. Pump the results from above to the Huffman transformer
  */
 
-use crate::{constants, compressor::lz77::LzSymbol, utils::bit_writer::BitWriter};
+use crate::{compressor::lz77::LzSymbol, constants, utils::bit_writer::BitWriter};
 use std::{
     collections::VecDeque,
     fs::File,
@@ -34,7 +34,6 @@ impl MCompressor {
     pub fn get_out_file_path(&self) -> &Path {
         &self.out_file_path
     }
-
 
     pub fn new(in_file_path: impl AsRef<Path>) -> Self {
         let in_path = in_file_path.as_ref().to_path_buf();

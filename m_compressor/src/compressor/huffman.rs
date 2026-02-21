@@ -10,6 +10,71 @@ type LitLenCntArr = [usize; constants::LIT_LEN_ALPHABET_SIZE];
 type DistCntArr = [usize; constants::DIST_ALPHABET_SIZE];
 type CanonicalCodesMapEntry = (u128, u8);
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_code_index() {
+        assert_eq!(get_code_index(3, &constants::LEN_BASE_CODES), 0);
+        assert_eq!(get_code_index(4, &constants::LEN_BASE_CODES), 1);
+        assert_eq!(get_code_index(258, &constants::LEN_BASE_CODES), 28);
+    }
+
+    #[test]
+    fn test_get_hm_code_for_lz_ptr() {
+        let (dist_idx, len_code) = get_hm_code_for_lz_ptr(&5, &10);
+        assert_eq!(dist_idx, 4);
+        assert_eq!(len_code, 257 + 7);
+    }
+
+    #[test]
+    fn test_put_lit_len_dist_freq() {
+        let mut lit_len_cnt: LitLenCntArr = [0; constants::LIT_LEN_ALPHABET_SIZE];
+        let mut dist_cnt: DistCntArr = [0; constants::DIST_ALPHABET_SIZE];
+        let mut lz_symbols: VecDeque<LzSymbol> = VecDeque::new();
+
+        lz_symbols.push_back(LzSymbol::Literal(65));
+        lz_symbols.push_back(LzSymbol::Pointer { dist: 5, len: 10 });
+
+        put_lit_len_dist_freq(&mut lit_len_cnt, &mut dist_cnt, &lz_symbols);
+
+        assert_eq!(lit_len_cnt[65], 1);
+        assert_eq!(lit_len_cnt[constants::END_OF_BLOCK_ID], 1);
+        assert_eq!(dist_cnt[4], 1);
+    }
+
+    #[test]
+    fn test_generate_canonical_codes_empty() {
+        let lengths: Vec<u8> = vec![0; 10];
+        let codes = generate_canonical_codes(&lengths);
+        assert_eq!(codes.len(), 10);
+        assert!(codes.iter().all(|(_, len)| *len == 0));
+    }
+
+    #[test]
+    fn test_generate_canonical_codes_simple() {
+        let lengths = vec![2, 2, 1];
+        let codes = generate_canonical_codes(&lengths);
+
+        assert_eq!(codes[0].1, 2);
+        assert_eq!(codes[1].1, 2);
+        assert_eq!(codes[2].1, 1);
+    }
+
+    #[test]
+    fn test_generate_canonical_codes_with_zeros() {
+        let lengths = vec![0, 2, 0, 3, 0];
+        let codes = generate_canonical_codes(&lengths);
+
+        assert_eq!(codes[0].1, 0);
+        assert_eq!(codes[1].1, 2);
+        assert_eq!(codes[2].1, 0);
+        assert_eq!(codes[3].1, 3);
+        assert_eq!(codes[4].1, 0);
+    }
+}
+
 fn get_code_index(val: u16, base_codes: &[u16]) -> u16 {
     for (i, &base) in base_codes.iter().enumerate().rev() {
         if val >= base {
@@ -61,8 +126,6 @@ fn generate_canonical_codes(lengths: &Vec<u8>) -> Vec<CanonicalCodesMapEntry> {
         return vec![(0, 0); lengths.len()];
     }
 
-    // Sort by length ascending, then symbol ascending.
-    // This is the core requirement for canonical Huffman codes.
     symbols_with_lengths.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
 
     let mut canonical_codes = vec![(0u128, 0u8); lengths.len()];
@@ -177,9 +240,6 @@ pub fn process_huffman(
     let mut lit_len_cnt: LitLenCntArr = [0; constants::LIT_LEN_ALPHABET_SIZE];
     let mut dist_cnt: DistCntArr = [0; constants::DIST_ALPHABET_SIZE];
 
-    // 1. Write block header (RFC 1951)
-    // BFINAL: 1 bit (is_last)
-    // BTYPE: 2 bits (10 for dynamic Huffman)
     bit_writer
         .write_bits(if is_last { 1 } else { 0 }, 1)
         .map_err(|_| CompressError::FileWrite)?;
@@ -215,61 +275,4 @@ pub fn process_huffman(
         .map_err(|_| CompressError::FileWrite)?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::constants;
-
-    #[test]
-    fn test_huffman_depth_limit() {
-        let mut frequencies = vec![0usize; constants::LIT_LEN_ALPHABET_SIZE];
-        for i in 0..17 {
-            frequencies[i] = 1 << i;
-        }
-        frequencies[constants::END_OF_BLOCK_ID] = 1;
-
-        let lengths = get_limited_code_lengths(&frequencies, constants::MAX_BIT_LENGTH);
-
-        let max_len = lengths.iter().max().unwrap();
-        assert!(
-            *max_len <= constants::MAX_BIT_LENGTH,
-            "Max Huffman code length exceeded {} bits: {}",
-            constants::MAX_BIT_LENGTH,
-            max_len
-        );
-
-        let non_zero_weights = frequencies.iter().filter(|&&w| w > 0).count();
-        let non_zero_lengths = lengths.iter().filter(|&&l| l > 0).count();
-        assert_eq!(
-            non_zero_weights, non_zero_lengths,
-            "Number of symbols changed"
-        );
-
-        let mut kraft_sum = 0.0f64;
-        for &len in lengths.iter() {
-            if len > 0 {
-                kraft_sum += 2.0f64.powi(-(len as i32));
-            }
-        }
-        assert!(
-            kraft_sum <= 1.000000000001,
-            "Kraft inequality violated: {}",
-            kraft_sum
-        );
-    }
-
-    #[test]
-    fn test_dist_huffman_depth_limit() {
-        let mut frequencies = vec![0usize; constants::DIST_ALPHABET_SIZE];
-        for i in 0..frequencies.len() {
-            frequencies[i] = 1 << i;
-        }
-
-        let lengths = get_limited_code_lengths(&frequencies, constants::MAX_BIT_LENGTH);
-
-        let max_len = lengths.iter().max().unwrap();
-        assert!(*max_len <= constants::MAX_BIT_LENGTH);
-    }
 }

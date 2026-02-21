@@ -9,6 +9,93 @@ pub enum LzSymbol {
     Pointer { dist: u16, len: u16 },
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_literal_symbol_creation() {
+        let symbol = LzSymbol::Literal(65);
+        assert_eq!(symbol, LzSymbol::Literal(65));
+    }
+
+    #[test]
+    fn test_pointer_symbol_creation() {
+        let symbol = LzSymbol::Pointer { dist: 10, len: 5 };
+        assert_eq!(symbol, LzSymbol::Pointer { dist: 10, len: 5 });
+    }
+
+    #[test]
+    fn test_process_lz77_empty_input() {
+        let mut lz_symbols: VecDeque<LzSymbol> = VecDeque::new();
+        let mut window: VecDeque<u8> = VecDeque::new();
+        let input: Vec<u8> = vec![];
+
+        let result = process_lz77(&input, &mut lz_symbols, &mut window);
+        assert!(result.is_ok());
+        assert!(lz_symbols.is_empty());
+    }
+
+    #[test]
+    fn test_process_lz77_single_byte() {
+        let mut lz_symbols: VecDeque<LzSymbol> = VecDeque::new();
+        let mut window: VecDeque<u8> = VecDeque::new();
+        let input = vec![0x41];
+
+        let result = process_lz77(&input, &mut lz_symbols, &mut window);
+        assert!(result.is_ok());
+        assert_eq!(lz_symbols.len(), 1);
+        assert_eq!(lz_symbols[0], LzSymbol::Literal(0x41));
+    }
+
+    #[test]
+    fn test_process_lz77_repeating_pattern() {
+        let mut lz_symbols: VecDeque<LzSymbol> = VecDeque::new();
+        let mut window: VecDeque<u8> = VecDeque::new();
+        let input = b"aaaaabbbbb".to_vec();
+
+        let result = process_lz77(&input, &mut lz_symbols, &mut window);
+        assert!(result.is_ok());
+        assert!(!lz_symbols.is_empty());
+    }
+
+    #[test]
+    fn test_process_lz77_window_size_limit() {
+        let mut lz_symbols: VecDeque<LzSymbol> = VecDeque::new();
+        let mut window: VecDeque<u8> = VecDeque::new();
+        let input: Vec<u8> = (0..255).cycle().take(50_000).collect();
+
+        let result = process_lz77(&input, &mut lz_symbols, &mut window);
+        assert!(result.is_ok());
+        assert!(window.len() <= WINDOW_SIZE);
+    }
+
+    #[test]
+    fn test_get_token_empty_window() {
+        let window: VecDeque<u8> = VecDeque::new();
+        let buffer: VecDeque<u8> = vec![0x41, 0x42, 0x43].into();
+
+        let token = get_token(&window, &buffer);
+        assert_eq!(token, LzSymbol::Literal(0x41));
+    }
+
+    #[test]
+    fn test_get_token_no_match() {
+        let window: VecDeque<u8> = vec![0x41, 0x42, 0x43].into();
+        let buffer: VecDeque<u8> = vec![0x44, 0x45, 0x46].into();
+
+        let token = get_token(&window, &buffer);
+        assert_eq!(token, LzSymbol::Literal(0x44));
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(WINDOW_SIZE, 1 << 15);
+        assert_eq!(MIN_MATCH_SEARCH_SIZE, 3);
+        assert_eq!(MAX_MATCH_SEARCH_SIZE, 258);
+    }
+}
+
 pub const WINDOW_SIZE: usize = 1 << 15;
 pub const MIN_MATCH_SEARCH_SIZE: usize = 3;
 pub const MAX_MATCH_SEARCH_SIZE: usize = 258;
