@@ -1,12 +1,9 @@
-use std::{
-    cmp::Reverse,
-    collections::{BinaryHeap, VecDeque},
-};
+use std::collections::VecDeque;
 
 use crate::{
-    constants,
     compressor::{CompressError, lz77::LzSymbol},
-    utils::{bit_writer::BitWriter, huffman_tree_node::HuffmanTreeNode},
+    constants,
+    utils::{bit_writer::BitWriter, package_merge::get_limited_code_lengths},
 };
 
 type LitLenCntArr = [usize; constants::LIT_LEN_ALPHABET_SIZE];
@@ -50,57 +47,6 @@ fn put_lit_len_dist_freq(
 
     // Every block ends with the END_OF_BLOCK_ID (256).
     lit_len_cnt[constants::END_OF_BLOCK_ID] = 1;
-}
-
-/// Creates and returns a tree made of HuffmanTreeNodes.
-/// Uses frequencies of the symbols as weights. Higher
-/// weighted symbols are assigned relatively shorter codes
-/// by building the tree in a fashion which leads to leaves
-/// of these symbols being at comparatively smaller paths.
-fn get_huffman_tree(arr: &Vec<usize>) -> HuffmanTreeNode {
-    let mut heap: BinaryHeap<Reverse<HuffmanTreeNode>> = BinaryHeap::new();
-
-    for i in 0..arr.len() {
-        if arr[i] > 0 {
-            heap.push(Reverse(HuffmanTreeNode::new_leaf(arr[i], i)));
-        }
-    }
-
-    while heap.len() > 1 {
-        let Reverse(node_1) = heap.pop().unwrap();
-        let Reverse(node_2) = heap.pop().unwrap();
-        let new_node = HuffmanTreeNode::new_internal(node_1, node_2);
-
-        heap.push(Reverse(new_node));
-    }
-
-    if heap.is_empty() {
-        return HuffmanTreeNode::new_leaf(0, 0);
-    }
-    let Reverse(root) = heap.pop().unwrap();
-
-    root
-}
-
-fn get_code_lengths(tree_node: &HuffmanTreeNode, height: u8, lengths: &mut Vec<u8>) {
-    if tree_node.is_leaf() {
-        // If the tree only has one node (root is leaf), it must have length 1.
-        // weight > 0 check ensures we don't assign length to empty dummy nodes.
-        lengths[tree_node.symbol.unwrap()] = if height == 0 && tree_node.weight > 0 {
-            1
-        } else {
-            height
-        };
-        return;
-    }
-
-    if let Some(left) = &tree_node.left {
-        get_code_lengths(left, height + 1, lengths);
-    }
-
-    if let Some(right) = &tree_node.right {
-        get_code_lengths(right, height + 1, lengths);
-    }
 }
 
 fn generate_canonical_codes(lengths: &Vec<u8>) -> Vec<CanonicalCodesMapEntry> {
@@ -171,7 +117,8 @@ fn write_to_stream(
                 .map_err(|_| CompressError::FileWrite)?;
 
             if extra_bits_len > 0 {
-                let extra_bits = (*len - constants::LEN_BASE_CODES[(len_sym - 257) as usize]) as u128;
+                let extra_bits =
+                    (*len - constants::LEN_BASE_CODES[(len_sym - 257) as usize]) as u128;
                 bit_writer
                     .write_bits(extra_bits, extra_bits_len as u8)
                     .map_err(|_| CompressError::FileWrite)?;
@@ -242,14 +189,8 @@ pub fn process_huffman(
 
     put_lit_len_dist_freq(&mut lit_len_cnt, &mut dist_cnt, lz_symbols);
 
-    let lit_len_tree_head_node: HuffmanTreeNode = get_huffman_tree(&lit_len_cnt.to_vec());
-    let dist_tree_head_node: HuffmanTreeNode = get_huffman_tree(&dist_cnt.to_vec());
-
-    let mut lit_len_lengths = vec![0u8; constants::LIT_LEN_ALPHABET_SIZE];
-    let mut dist_lengths = vec![0u8; constants::DIST_ALPHABET_SIZE];
-
-    get_code_lengths(&lit_len_tree_head_node, 0, &mut lit_len_lengths);
-    get_code_lengths(&dist_tree_head_node, 0, &mut dist_lengths);
+    let lit_len_lengths = get_limited_code_lengths(&lit_len_cnt, constants::MAX_BIT_LENGTH);
+    let dist_lengths = get_limited_code_lengths(&dist_cnt, constants::MAX_BIT_LENGTH);
 
     let lit_len_canonical_map = generate_canonical_codes(&lit_len_lengths);
     let dist_canonical_map = generate_canonical_codes(&dist_lengths);
@@ -274,4 +215,61 @@ pub fn process_huffman(
         .map_err(|_| CompressError::FileWrite)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants;
+
+    #[test]
+    fn test_huffman_depth_limit() {
+        let mut frequencies = vec![0usize; constants::LIT_LEN_ALPHABET_SIZE];
+        for i in 0..17 {
+            frequencies[i] = 1 << i;
+        }
+        frequencies[constants::END_OF_BLOCK_ID] = 1;
+
+        let lengths = get_limited_code_lengths(&frequencies, constants::MAX_BIT_LENGTH);
+
+        let max_len = lengths.iter().max().unwrap();
+        assert!(
+            *max_len <= constants::MAX_BIT_LENGTH,
+            "Max Huffman code length exceeded {} bits: {}",
+            constants::MAX_BIT_LENGTH,
+            max_len
+        );
+
+        let non_zero_weights = frequencies.iter().filter(|&&w| w > 0).count();
+        let non_zero_lengths = lengths.iter().filter(|&&l| l > 0).count();
+        assert_eq!(
+            non_zero_weights, non_zero_lengths,
+            "Number of symbols changed"
+        );
+
+        let mut kraft_sum = 0.0f64;
+        for &len in lengths.iter() {
+            if len > 0 {
+                kraft_sum += 2.0f64.powi(-(len as i32));
+            }
+        }
+        assert!(
+            kraft_sum <= 1.000000000001,
+            "Kraft inequality violated: {}",
+            kraft_sum
+        );
+    }
+
+    #[test]
+    fn test_dist_huffman_depth_limit() {
+        let mut frequencies = vec![0usize; constants::DIST_ALPHABET_SIZE];
+        for i in 0..frequencies.len() {
+            frequencies[i] = 1 << i;
+        }
+
+        let lengths = get_limited_code_lengths(&frequencies, constants::MAX_BIT_LENGTH);
+
+        let max_len = lengths.iter().max().unwrap();
+        assert!(*max_len <= constants::MAX_BIT_LENGTH);
+    }
 }
